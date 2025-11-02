@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test Client</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #fafafa; }
+        #messages { border: 1px solid #ccc; padding: 10px; margin-top: 10px; height: 300px; overflow-y: scroll; background: #fff }
+        #messages div { margin-bottom: 5px; }
+        input[type="text"] { width: 250px; padding: 8px; margin-right: 8px; }
+        button { padding: 8px 14px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<h1>WebSocket Chat Test</h1>
+<p>Status: <span id="status">Connecting...</span></p>
+
+<section id="websocket-test">
+    <div>
+        <input type="text" id="messageInput" placeholder="Type a message...">
+        <button id="sendButton">Send</button>
+    </div>
+    <h3>Received Messages:</h3>
+    <div id="messages"></div>
+</section>
+
+<!-- Guesser Section (hidden until server tells you to guess) -->
+<section id="guesser-section" style="display:none; margin-top:20px;">
+    <h2>Guess the Drawing!</h2>
+    <canvas id="guesserCanvas" width="400" height="400" style="border:1px solid #000;"></canvas>
+    <div style="margin-top:10px;">
+        <input type="text" id="guessInput" placeholder="Type your guess...">
+        <button id="submitGuess">Submit Guess</button>
+    </div>
+    <p id="guessFeedback"></p>
+</section>
+
+<script>
+    // ======================
+    // STARTER CHAT CODE
+    // ======================
+    const statusEl = document.getElementById('status');
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('messageInput');
+    const sendButton = document.getElementById('sendButton');
+
+    const ws = new WebSocket(`ws://${window.location.host}`);
+
+    ws.onopen = () => {
+        console.log('Connected to server.');
+        statusEl.textContent = 'Connected';
+        statusEl.style.color = 'green';
+    };
+
+    ws.onmessage = (event) => {
+        // display raw messages
+        const message = event.data;
+        console.log('Received:', message);
+        const messageDiv = document.createElement('div');
+        messageDiv.textContent = `Received: ${message}`;
+        messagesEl.appendChild(messageDiv);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    };
+
+    ws.onclose = () => {
+        console.log('Disconnected from server.');
+        statusEl.textContent = 'Disconnected';
+        statusEl.style.color = 'red';
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket Error:', error);
+        statusEl.textContent = 'Error';
+        statusEl.style.color = 'red';
+    };
+
+    sendButton.onclick = () => {
+        const message = inputEl.value.trim();
+        if (message && ws.readyState === WebSocket.OPEN) {
+            ws.send(message);
+            const sentDiv = document.createElement('div');
+            sentDiv.textContent = `Sent: ${message}`;
+            sentDiv.style.color = 'blue';
+            messagesEl.appendChild(sentDiv);
+            inputEl.value = '';
+        }
+    };
+
+    inputEl.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendButton.onclick();
+    });
+
+    // ======================
+    // GUESSER LOGIC
+    // ======================
+    const guessSection = document.getElementById('guesser-section');
+    const guessInput = document.getElementById('guessInput');
+    const submitGuessBtn = document.getElementById('submitGuess');
+    const guessFeedback = document.getElementById('guessFeedback');
+    const canvas = document.getElementById('guesserCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Replay canvas history sent by the server
+    function replayCanvas(history) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        history.forEach(cmd => {
+            ctx.beginPath();
+            ctx.strokeStyle = cmd.color || 'black';
+            ctx.lineWidth = cmd.lineWidth || 2;
+            ctx.moveTo(cmd.from.x, cmd.from.y);
+            ctx.lineTo(cmd.to.x, cmd.to.y);
+            ctx.stroke();
+        });
+    }
+
+    // Submit a guess
+    submitGuessBtn.onclick = () => {
+        const guess = guessInput.value.trim();
+        if (guess && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "submitGuess", guess }));
+            guessFeedback.textContent = "Guess submitted!";
+            submitGuessBtn.disabled = true;
+            guessInput.disabled = true;
+        }
+    };
+
+    // Listen for server messages specifically for the guesser
+    ws.addEventListener('message', (event) => {
+        let data;
+        try { data = JSON.parse(event.data); } catch { return; }
+
+        switch (data.type) {
+            case "startGuessing":
+                // Show the guess section only for the chosen guesser
+                guessSection.style.display = "block";
+                guessInput.disabled = false;
+                submitGuessBtn.disabled = false;
+                guessInput.value = "";
+                guessFeedback.textContent = "You have 10 seconds to view, then 10 seconds to guess!";
+                replayCanvas(data.canvasHistory);
+                break;
+
+            case "reveal":
+                guessFeedback.textContent = 
+                    `Round over! Prompt: "${data.prompt}", Your Guess: "${data.guess}", Correct: ${data.correct}`;
+                break;
+        }
+    });
+</script>
+
+</body>
+</html>
